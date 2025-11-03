@@ -1,0 +1,87 @@
+Vreau sa imi scri un cod in python care creaza un config pe baza unui excell. 
+Codul de python trebuie sa citeasca un excell si sa dea ca output un fisier config.hwtp sau chiar mai multe in functie de sheeturi si continutul lor. 
+
+cam asa arata un inceput de config:
+;=============Master============
+wo32 main_c_SymMaster_u32      0x341F0000
+;=============Main============
+wo32  main_c_SymtabStd_u32      $$$$(main_c_SymMaster_u32 +  0.)
+wo32  main_c_SymtabProj_u32     $$$$(main_c_SymMaster_u32 +  4.)
+wo32  main_c_SymtabExt_u32      $$$$(main_c_SymMaster_u32 +  8.)
+;=============RTC============
+wo32 rtc_c_Control_b16          $$$$(main_c_SymtabStd_u32 + 0x88)
+wo32 rtc_c_RefPntTyp_u32        $$$$(main_c_SymtabStd_u32 + 0x8C)
+;
+wo32 rtc_g_cmd_u8               $$$$(rtc_c_RefPntTyp_u32 + 0x00)
+wo32 rtc_g_addr_u8              $$$$(rtc_c_RefPntTyp_u32 + 0x04)
+wo32 rtc_g_data_u8              $$$$(rtc_c_RefPntTyp_u32 + 0x08) ; 0x08 este valoarea care s-ar gasi pe coloana HEX din symbTable
+
+Cum as vrea sa functioneze? :
+Codul de python sa scaneze intreg documentul excel si numele tuturor sheeturilor. 
+Fiecare nume de sheet nou o sa fie trecut in config ca 
+;===============<nume sheet>..................
+
+Apoi trebuie sa se treaca continutul sheetului. o sa se scaneze fiecare sheet in parte. Un singur sheet e diferit ca structura, sheetul care contine cuvantul Master in titlu. In acest sheet o sa se caute coloana Symbol, coloana Address apoi o sa se scrie in config 
+wo32 <prima info ce se gaseste in celula din coloana Symbol>    <adresa ce se gaseste in prima celula de la coloana de Adress>
+exemplu:
+wo32 main_c_SymMaster_u32      0x341F0000
+
+O sa mai avem un sheet special care se numeste Symbol Tables, aici ne intereseaza coloanele cu header Reference, Offset. 
+Aici se scrie wo32 <numa la ce avem pe coloana Rference>  main_c_SymMaster_u32<SynMaster e ceea ce am luat de dinainte si declarat, deci poate sa fie altceva> +  <ce se gaseste la offset>.)
+
+exemple:
+wo32  main_c_SymTabStd_u32      $$$$(main_c_SymMaster_u32 +  0.)
+wo32  main_c_SymTabProj_u32     $$$$(main_c_SymMaster_u32 +  4.)
+wo32  main_c_SymTabExt_u32      $$$$(main_c_SymMaster_u32 +  8.)
+
+Acum urmeaza iar un sheet special numit Standard Symbol Table din care ne intereseaza coloanele Symbol, Reference, Hex. 
+O sa avem structura wo32 <numele de pe coloana cu symbol>  <numele de la symStandard definit anterior> +  <Hex>
+Exemple: 
+wo32  adc_g_Raw_u16     $$$$(main_c_SymTabStd_u32 +  18)
+wo32  psu_g_Data_s    $$$$(main_c_SymTabStd_u32 +  30)
+Daca nu exista coloana cu Hex, atunci se ia valoare de pe coloana cu Offset si se pune . dupa ea care indica faptul ca este in decimal.
+Deci doar la sheetul in care avem semnalele la general folosim $$$$( ).
+
+Acum umreaza multe sheeturi care sunt la fel ca definire (structura) toate.
+Ele au nume diferite toate dar ca structura ne intereseaza coloanele cu header Symbol, Reference, Hex, Size
+Acum prima data studiem ce este in coloana de Size. Daca avem 4, folosim wo32, si cand luam valoarea sau adresa o sa folosim  <ce se gaseste in Reference> + <Hex>)
+Daca nu exista coloana de Hex, cautam coloana de Offset si punem de acolo valoarea cu . pentru decimal. 
+exemplu: wo32 Spare_Pwm_05            dio_g_DigIn_u32 +  8.
+Daca  avem la size 2, folosim   wo fiindca inseamna 16 biti
+exemplu  wo16 OUT_PWM_HB_15_16_IS adc_g_Control_b16 + 0.
+Pentru valori din coloana size de 1 folosim by care indica 8 biti si o sa avem comanda ca exemple 
+BY OFFSET_CAL dio_g_DigOut_u8 +  6.
+Daca avem la size valori multiple de octeti, de exemplu 8 in coloana de size, acea valoare o spargem in 2, una cu wo32 si nulepe cu terminatia _low si cealata parte definim restul de biti tot cu wo32 dar avem terminatia numelui _high
+si avem urmatorul exemplu: in tabel avem PWM_OUT_06_U care este la Coloana HEX 72 si la coloana size 8, coloana de referance are pio_g_PWM_s. Deci o sa avem definire pentru acest simbol 2 comenzi
+WO32 PWM_OUT_06_UC_low   pio_g_PWM_s + 72
+WO32 PWM_OUT_06_UC_high  pio_g_PWM_s + 76
+
+Acum mai este un caz in care avem si mai mari, size de 16 bytes, adica 120 biti. 
+Si aici in tabel avem PWM_OUT_06_U care la coloana de HEX are 48 si coloana size de 16, coloana de referance are pio_g_PWM_s. O sa avem urmatoarea spargere:
+
+WO32 PWM_OUT_06_UC_w0   pio_g_PWM_s + 0x48   ; 72d
+WO32 PWM_OUT_06_UC_w1   pio_g_PWM_s + 0x4C   ; 76d
+WO32 PWM_OUT_06_UC_w2   pio_g_PWM_s + 0x50   ; 80d
+WO32 PWM_OUT_06_UC_w3   pio_g_PWM_s + 0x54   ; 84d
+
+Acum, mai avem si unele exceptii, tot ce are in denumire CAN_ o sa fie definit cu wo32 si o sa mai fie si inca o definire in plus cu valori
+VAR CAN1_MSG1      0. ; ca si exemplu, deci orice semnal care are atat can cat si msg in lume o sa fie definit cu VAR <nume can cu msg> <Offset> 
+Am sa te rog sa ai mare greija de pe ce coloana s-au luat informatiile pentru offset. daca sunt de pe coloana intitulata offset se ia valoare si semnul.(punct) fix dupa iar daca s-a luat de pe coloana Hex, se ia valoarea ca si 0x(valoarea din celula).
+Mai sunt si cateva reguli ciudate de care nu imi dau seama(adica cand pun $$$$() si cand nu folosesc. Din ce vad, la general nu prea folosesc), asa ca te-as ruga sa analizezi mai amanuntit si aceste lucruri:
+; spi control
+wo32 spi_g_Control_b16              $$$$(com_g_Control_pb16 +  0)
+
+; a couple of intermediate references
+wo32 spi_g_Chn_s                    $$$$(com_g_Chn_pu +  0)
+
+wo32 spi_g_Chn_s_0                  spi_g_Chn_s +  0
+wo32 spi_g_Chn_s_1                  spi_g_Chn_s +  10
+wo32 spi_g_Chn_s_2                  spi_g_Chn_s +  20
+
+; spi channel 0
+wo32 SPI_00_TxBuf_pu8               $$$$(spi_g_Chn_s_0 +  0)
+wo32 SPI_00_RxBuf_pu8               $$$$(spi_g_Chn_s_0 +  4)
+wo16 SPI_00_Ctrl_b16                spi_g_Chn_s_0 +  A
+by SPI_00_TxLim_u8                  spi_g_Chn_s_0 +  D
+
+Am sa iti las si un fisier excell de analiza poate de ajuta sa generezi codul mai usor daca te-ai uita la un exemplu concret. 
