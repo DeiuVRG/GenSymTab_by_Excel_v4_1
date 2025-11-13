@@ -11,6 +11,7 @@ This creates a single executable that includes:
 - generate_test_menu_v4.py
 - VRG_Logo.ico (if exists)
 - All Python dependencies
+- Pandas, NumPy, OpenPyXL, et_xmlfile packages
 
 Usage:
     python build_exe.py
