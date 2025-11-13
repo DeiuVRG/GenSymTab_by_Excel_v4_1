@@ -20,6 +20,7 @@ from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 import subprocess
 import sys
+import traceback
 import os
 from typing import Optional
 
@@ -300,42 +301,34 @@ class ConfigTestGeneratorGUI:
         self.root.update()
         
         try:
-            # Run GenSymb_ConfigVRG.py
-            script_path = get_resource_path("GenSymb_ConfigVRG.py")
-            output_path = self.config_dir / "config.hwtp"
-            
-            cmd = [
-                sys.executable,
-                script_path,
-                str(self.excel_path),
-                "--out", str(output_path),
-                "--multi"
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-            
-            if result.returncode == 0:
-                # Count generated files
-                config_files = list(self.config_dir.glob("config*.hwtp"))
-                num_configs = len(config_files)
-                
-                self.config_label.config(
-                    text=f"✅ Generated {num_configs} config file(s) in:\n{self.config_dir}",
-                    fg=self.accent_green
-                )
-                self.test_btn.set_enabled(True)
-                self.set_status(f"Success! Generated {num_configs} configs", self.accent_green)
-                
-                messagebox.showinfo(
-                    "Success",
-                    f"Successfully generated {num_configs} configuration file(s)!\n\n" +
-                    f"Location: {self.config_dir}"
-                )
-            else:
-                error_msg = result.stderr or "Unknown error"
-                self.set_status("Config generation failed!", "#F44336")
-                messagebox.showerror("Error", f"Failed to generate configs:\n\n{error_msg}")
-                
+            # Prefer direct import to work inside bundled .exe
+            try:
+                import GenSymb_ConfigVRG as genconf
+            except Exception as imp_err:
+                # Fallback: show detailed traceback to help diagnose
+                tb = traceback.format_exc()
+                raise RuntimeError(f"Failed to import GenSymb_ConfigVRG module.\n\n{tb}") from imp_err
+
+            # Run multi-config generation directly via API
+            genconf.generate_multi_configs(str(self.excel_path), str(self.config_dir), base_name="config")
+
+            # Count generated files
+            config_files = list(self.config_dir.glob("config*.hwtp"))
+            num_configs = len(config_files)
+
+            self.config_label.config(
+                text=f"✅ Generated {num_configs} config file(s) in:\n{self.config_dir}",
+                fg=self.accent_green
+            )
+            self.test_btn.set_enabled(True)
+            self.set_status(f"Success! Generated {num_configs} configs", self.accent_green)
+
+            messagebox.showinfo(
+                "Success",
+                f"Successfully generated {num_configs} configuration file(s)!\n\n" +
+                f"Location: {self.config_dir}"
+            )
+
         except Exception as e:
             self.set_status("Config generation failed!", "#F44336")
             messagebox.showerror("Error", f"Error generating configs:\n\n{str(e)}")
@@ -358,35 +351,37 @@ class ConfigTestGeneratorGUI:
         self.root.update()
         
         try:
-            script_path = get_resource_path("generate_test_menu_v4.py")
+            # Import test generator as a module and call its API
+            try:
+                import generate_test_menu_v4 as gentest
+            except Exception as imp_err:
+                tb = traceback.format_exc()
+                raise RuntimeError(f"Failed to import generate_test_menu_v4 module.\n\n{tb}") from imp_err
+
             tests_generated = 0
-            
+
             for config_file in config_files:
                 # Extract variant name (e.g., config_DZC.hwtp -> DZC)
                 variant = config_file.stem.replace("config_", "")
                 test_file = self.config_dir / f"test_{variant}_v4.hwtp"
-                
-                cmd = [
-                    sys.executable,
-                    script_path,
-                    str(config_file),
-                    "--out", str(test_file)
-                ]
-                
-                result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-                
-                if result.returncode == 0:
-                    tests_generated += 1
-                else:
-                    print(f"Warning: Failed to generate test for {variant}")
-                    
+
+                # Parse config and generate menu lines
+                groups = gentest.parse_config(config_file)
+                lines = gentest.generate_test_menu(groups)
+
+                # Write output file
+                with open(test_file, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines))
+
+                tests_generated += 1
+
             if tests_generated > 0:
                 self.test_label.config(
                     text=f"✅ Generated {tests_generated} test file(s) in:\n{self.config_dir}",
                     fg=self.accent_green
                 )
                 self.set_status(f"Success! Generated {tests_generated} tests", self.accent_green)
-                
+
                 messagebox.showinfo(
                     "Success",
                     f"Successfully generated {tests_generated} test menu file(s)!\n\n" +
@@ -395,7 +390,7 @@ class ConfigTestGeneratorGUI:
             else:
                 self.set_status("No tests generated!", "#F44336")
                 messagebox.showwarning("Warning", "No tests were generated. Check config files.")
-                
+
         except Exception as e:
             self.set_status("Test generation failed!", "#F44336")
             messagebox.showerror("Error", f"Error generating tests:\n\n{str(e)}")

@@ -58,16 +58,19 @@ def build_exe():
     print("Building executable with PyInstaller...")
     print("-"*60 + "\n")
     
-    # PyInstaller command
+    # PyInstaller command (modules are imported directly; no add-data for scripts)
     cmd = [
         sys.executable,
         "-m", "PyInstaller",
         "--onefile",                          # Single .exe file
         "--windowed",                         # No console window (GUI only)
-        "--name=ConfigTestGenerator",        # Output name
+        "--name=ConfigTestGenerator",         # Output name
         "--clean",                            # Clean cache
-        "--add-data", f"GenSymb_ConfigVRG.py{';' if sys.platform == 'win32' else ':'}.",
-        "--add-data", f"generate_test_menu_v4.py{';' if sys.platform == 'win32' else ':'}.",
+        "--noconfirm",
+        "--collect-all", "pandas",
+        "--collect-all", "numpy",
+        "--collect-all", "openpyxl",
+        "--collect-all", "et_xmlfile",
     ]
     
     # Add icon if exists
